@@ -35,8 +35,13 @@ export default function ClientWebsiteView() {
   const [currentFrame, setCurrentFrame] = useState(0)
   const [motionPaused, setMotionPaused] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
+  const [pastHero, setPastHero] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [loadedWebpCount, setLoadedWebpCount] = useState(0)
+
+  const seekingRef = useRef(false)
+  const desiredTimeRef = useRef(0)
+  const seekTimerRef = useRef(0)
 
   // Default to pure Codex video reveal ('video') if tenant has video; fallback to 'wireframe' only if no video
   const hasVideo = Boolean(activeTenant.media?.video || activeTenant.id === 'scg-roofing')
@@ -52,8 +57,12 @@ export default function ClientWebsiteView() {
   const helperAvatarSrc =
     activeTenant.media?.helperAvatar || '/assets/roofing/helper-v1/avatar.webp'
 
-  // Preload 150-frame .webp sequence if present in /sequences/<tenant>/frame_0001.webp
+  // Only preload 150-frame .webp sequence if explicitly configured and not in native MP4 video mode
   useEffect(() => {
+    if (activeVisualMode === 'video' || !activeTenant.frameSequence?.enabled) {
+      setLoadedWebpCount(0)
+      return
+    }
     let cancelled = false
     const frames = new Array(TOTAL_FRAMES)
     let loadedCount = 0
@@ -92,7 +101,7 @@ export default function ClientWebsiteView() {
     return () => {
       cancelled = true
     }
-  }, [activeTenant])
+  }, [activeTenant, activeVisualMode])
 
   const handleCustomFramesUpload = (e) => {
     const files = Array.from(e.target.files || []).sort((a, b) =>
@@ -117,77 +126,173 @@ export default function ClientWebsiteView() {
     })
   }
 
-  // Sync video timestamp or 150-frame canvas with scrollProgress
+  // Exact Codex scroll-video.mjs seeking-locked video scrub + 150-frame canvas fallback
   useEffect(() => {
-    if (motionPaused) return
+    const video = videoRef.current
+    if (!video || activeVisualMode !== 'video') return
 
-    if (activeVisualMode === 'video') {
-      const video = videoRef.current
-      if (video && video.readyState >= 2) {
-        const duration = Math.min(8, video.duration || 8)
-        const targetTime = timeAt(scrollProgress, duration, 24)
-        if (Math.abs(video.currentTime - targetTime) > 1 / 48) {
-          try {
-            video.currentTime = targetTime
-          } catch {
-            // Ignore seek errors while buffering
-          }
-        }
+    const flushSeek = () => {
+      if (motionPaused || seekingRef.current || video.readyState < 1) return
+      const duration = Math.min(8, Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 8)
+      const target = desiredTimeRef.current
+      if (Math.abs(video.currentTime - target) < 1 / 48) {
+        video.dataset.ready = 'true'
+        setVideoReady(true)
+        return
       }
-    } else if (activeVisualMode === 'wireframe') {
-      const canvas = canvasRef.current
-      if (!canvas) return
-      const dpr = window.devicePixelRatio || 1
-      const rect = canvas.getBoundingClientRect()
-      if (rect.width === 0 || rect.height === 0) return
-
-      if (
-        canvas.width !== Math.floor(rect.width * dpr) ||
-        canvas.height !== Math.floor(rect.height * dpr)
-      ) {
-        canvas.width = Math.floor(rect.width * dpr)
-        canvas.height = Math.floor(rect.height * dpr)
+      seekingRef.current = true
+      window.clearTimeout(seekTimerRef.current)
+      try {
+        video.currentTime = target
+      } catch {
+        seekingRef.current = false
+        return
       }
-
-      const ctx = canvas.getContext('2d')
-      ctx.save()
-      ctx.scale(dpr, dpr)
-      renderScrubFrame(
-        ctx,
-        rect.width,
-        rect.height,
-        currentFrame,
-        TOTAL_FRAMES,
-        activeTenant,
-        customFramesRef.current,
-        false
-      )
-      ctx.restore()
+      seekTimerRef.current = window.setTimeout(() => {
+        seekingRef.current = false
+      }, 450)
     }
-  }, [scrollProgress, currentFrame, activeVisualMode, activeTenant, motionPaused])
 
-  // Bind GSAP ScrollTrigger (scrub: 0.4) to Codex's native 240svh .hero + sticky .hero-sticky
+    const handleLoaded = () => {
+      seekingRef.current = false
+      window.clearTimeout(seekTimerRef.current)
+      video.dataset.ready = 'true'
+      setVideoReady(true)
+      flushSeek()
+    }
+
+    const handleSeeked = () => {
+      seekingRef.current = false
+      window.clearTimeout(seekTimerRef.current)
+      video.dataset.ready = 'true'
+      setVideoReady(true)
+      flushSeek()
+    }
+
+    video.addEventListener('loadedmetadata', handleLoaded)
+    video.addEventListener('loadeddata', handleLoaded)
+    video.addEventListener('canplay', handleLoaded)
+    video.addEventListener('seeked', handleSeeked)
+
+    if (video.readyState >= 1) {
+      handleLoaded()
+    } else {
+      video.load()
+    }
+
+    return () => {
+      window.clearTimeout(seekTimerRef.current)
+      video.removeEventListener('loadedmetadata', handleLoaded)
+      video.removeEventListener('loadeddata', handleLoaded)
+      video.removeEventListener('canplay', handleLoaded)
+      video.removeEventListener('seeked', handleSeeked)
+    }
+  }, [activeVisualMode, videoSrc, motionPaused])
+
+  // Sync wireframe canvas when in wireframe mode
+  useEffect(() => {
+    if (motionPaused || activeVisualMode !== 'wireframe') return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+
+    if (
+      canvas.width !== Math.floor(rect.width * dpr) ||
+      canvas.height !== Math.floor(rect.height * dpr)
+    ) {
+      canvas.width = Math.floor(rect.width * dpr)
+      canvas.height = Math.floor(rect.height * dpr)
+    }
+
+    const ctx = canvas.getContext('2d')
+    ctx.save()
+    ctx.scale(dpr, dpr)
+    renderScrubFrame(
+      ctx,
+      rect.width,
+      rect.height,
+      currentFrame,
+      TOTAL_FRAMES,
+      activeTenant,
+      customFramesRef.current,
+      false
+    )
+    ctx.restore()
+  }, [currentFrame, activeVisualMode, activeTenant, motionPaused])
+
+  // Native rAF scroll progress driver (starts scrubbing immediately from scrollY > 0 through the sticky hero track)
   useEffect(() => {
     const section = heroSectionRef.current
     if (!section) return
 
-    const st = ScrollTrigger.create({
-      trigger: section,
-      start: 'top top',
-      end: 'bottom bottom',
-      scrub: 0.4,
-      onUpdate: (self) => {
-        if (motionPaused) return
-        const p = Math.min(1, Math.max(0, self.progress))
-        setScrollProgress(p)
-        setCurrentFrame(
-          Math.min(TOTAL_FRAMES - 1, Math.max(0, Math.round(p * (TOTAL_FRAMES - 1))))
-        )
-      },
-    })
+    let rafId = 0
 
-    return () => st.kill()
-  }, [activeTenant.id, motionPaused])
+    const updateOnScroll = () => {
+      rafId = 0
+      if (motionPaused) return
+
+      const sticky = section.querySelector('.hero-sticky')
+      const rect = section.getBoundingClientRect()
+      const stickyHeight = sticky ? sticky.offsetHeight : window.innerHeight
+      const totalScrollable = Math.max(
+        1,
+        section.offsetTop + section.offsetHeight - stickyHeight - 58
+      )
+      const p = Math.min(1, Math.max(0, window.scrollY / totalScrollable))
+
+      section.dataset.progress = p.toFixed(3)
+      section.style.setProperty('--scene-progress', String(p))
+
+      const isPast = rect.bottom < window.innerHeight * 0.72 || p >= 0.94
+      setPastHero((prev) => (prev !== isPast ? isPast : prev))
+
+      const video = videoRef.current
+      if (activeVisualMode === 'video' && video) {
+        const duration = Math.min(
+          8,
+          Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 8
+        )
+        desiredTimeRef.current = timeAt(p, duration, 24)
+        if (!seekingRef.current && video.readyState >= 1) {
+          if (Math.abs(video.currentTime - desiredTimeRef.current) > 1 / 48) {
+            seekingRef.current = true
+            window.clearTimeout(seekTimerRef.current)
+            try {
+              video.currentTime = desiredTimeRef.current
+            } catch {
+              seekingRef.current = false
+            }
+            seekTimerRef.current = window.setTimeout(() => {
+              seekingRef.current = false
+            }, 450)
+          }
+        }
+      }
+
+      setScrollProgress(p)
+      setCurrentFrame(
+        Math.min(TOTAL_FRAMES - 1, Math.max(0, Math.round(p * (TOTAL_FRAMES - 1))))
+      )
+    }
+
+    const onScroll = () => {
+      if (!rafId) {
+        rafId = window.requestAnimationFrame(updateOnScroll)
+      }
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+    updateOnScroll()
+
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [activeTenant.id, activeVisualMode, motionPaused])
 
   const isScg = activeTenant.id === 'scg-roofing'
   const brandWords = activeTenant.companyName.split(' ')
@@ -701,7 +806,7 @@ export default function ClientWebsiteView() {
                 src={detailImgSrc}
                 width="960"
                 height="540"
-                loading="lazy"
+                loading="eager"
                 alt="Charcoal roof shingles in a generated design concept"
               />
               <figcaption>
@@ -823,7 +928,7 @@ export default function ClientWebsiteView() {
                 src={posterSrc}
                 width="960"
                 height="540"
-                loading="lazy"
+                loading="eager"
                 alt="Generated architectural concept of a home with a charcoal roof"
               />
               <figcaption>
@@ -889,7 +994,7 @@ export default function ClientWebsiteView() {
                         src="/assets/roofing/scg-projects/manchester.webp"
                         width="1100"
                         height="1467"
-                        loading="lazy"
+                        loading="eager"
                         decoding="async"
                         alt="SCG project photograph of a roof installation in Manchester, New Hampshire"
                       />
@@ -902,7 +1007,7 @@ export default function ClientWebsiteView() {
                         src="/assets/roofing/scg-projects/dover.webp"
                         width="1100"
                         height="733"
-                        loading="lazy"
+                        loading="eager"
                         decoding="async"
                         alt="SCG project photograph of a roof installation in Dover, New Hampshire"
                       />
@@ -915,7 +1020,7 @@ export default function ClientWebsiteView() {
                         src="/assets/roofing/scg-projects/nottingham.webp"
                         width="1100"
                         height="733"
-                        loading="lazy"
+                        loading="eager"
                         decoding="async"
                         alt="Property featured in SCG’s Nottingham, New Hampshire project gallery"
                       />
@@ -931,7 +1036,7 @@ export default function ClientWebsiteView() {
                         src={proj.image || '/assets/roofing/scg-projects/manchester.webp'}
                         width="1100"
                         height="733"
-                        loading="lazy"
+                        loading="eager"
                         decoding="async"
                         alt={`${activeTenant.companyName} project in ${proj.city}`}
                       />
@@ -1077,7 +1182,7 @@ export default function ClientWebsiteView() {
               src={helperAvatarSrc}
               width="210"
               height="210"
-              loading="lazy"
+              loading="eager"
               alt="Fictional cartoon roof helper wearing a red hard hat"
             />
             <div>
@@ -1265,7 +1370,7 @@ export default function ClientWebsiteView() {
               src={helperAvatarSrc}
               width="110"
               height="110"
-              loading="lazy"
+              loading="eager"
               alt="Fictional roof helper"
             />
             <h3>What can I help you figure out?</h3>
@@ -1393,8 +1498,11 @@ export default function ClientWebsiteView() {
 
           <div>
             <h2>Published business details</h2>
-            <span>{activeTenant.phoneDisplay}</span>
-            <span>info@SCGRoofs.com</span>
+            <p>
+              {activeTenant.phoneDisplay}
+              <br />
+              info@SCGRoofs.com
+            </p>
             <p>
               146 Londonderry Turnpike, Unit 20
               <br />
@@ -1429,7 +1537,7 @@ export default function ClientWebsiteView() {
       {/* ENGAGEMENT TOOLS (Exact Codex reference/codex-original/index.html lines 28-46) */}
       <div className="engagement-tools">
         <button
-          className="helper-launcher"
+          className={`helper-launcher ${pastHero ? '' : 'is-hidden-in-hero'}`}
           type="button"
           aria-label="Open roof assistant"
           data-engage="chat"

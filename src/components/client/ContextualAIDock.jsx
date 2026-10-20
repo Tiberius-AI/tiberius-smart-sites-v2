@@ -92,11 +92,18 @@ export default function ContextualAIDock() {
 
   const quickPrompts = activeTenant.pricingRules.services
     .slice(0, 3)
-    .map((s) => ({
-      serviceName: s.name,
-      label: s.name.split(' ').slice(0, 3).join(' '),
-      prompt: `Need a ballpark quote for ${s.name.toLowerCase()} in ${activeTenant.city}.`,
-    }))
+    .map((s) => {
+      const words = s.name.replace(/\s*\([^)]*\)/g, '').split(' ')
+      let shortLabel = words.slice(0, 3).join(' ')
+      if (shortLabel.endsWith('&') || shortLabel.toLowerCase().endsWith('and')) {
+        shortLabel = words.slice(0, 4).join(' ')
+      }
+      return {
+        serviceName: s.name,
+        label: shortLabel,
+        prompt: `Need a ballpark quote for ${s.name.toLowerCase()} in ${activeTenant.city}.`,
+      }
+    })
 
   const primaryPhoto = selectedPhotos[0] || null
 
@@ -260,7 +267,7 @@ export default function ContextualAIDock() {
               type="text"
               className="dock-text-input"
               aria-label="Ask a project question or describe damage"
-              placeholder={`Ask a ${activeTenant.niche.toLowerCase()} question or describe damage...`}
+              placeholder={`Ask a ${activeTenant.niche.split(',')[0].toLowerCase()} question or describe damage...`}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
             />
