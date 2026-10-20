@@ -5,6 +5,7 @@ import { usePlatform } from '../../context/usePlatform'
 import { renderScrubFrame } from '../../utils/wireframeOrbitRenderer'
 import ContextualAIDock from './ContextualAIDock'
 import TiberiusHelperModal from './TiberiusHelperModal'
+import VerifiedAuthorityBento from './VerifiedAuthorityBento'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -574,6 +575,9 @@ export default function ClientWebsiteView() {
             </div>
           </div>
         </section>
+
+        {/* 5.0-STAR VERIFIED AUTHORITY BENTO SECTION (Immediate Bridge Below Hero Track) */}
+        <VerifiedAuthorityBento onOpenQuote={() => openHelperModal('quote')} />
 
         {/* HELP DOCK (Exact Codex reference/codex-original/index.html lines 16-20) */}
         <div className="help-dock wrap" aria-label="Choose your next step">
