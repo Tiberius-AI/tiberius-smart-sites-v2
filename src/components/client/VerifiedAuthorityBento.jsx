@@ -1,78 +1,199 @@
 import { useEffect, useRef, useState } from 'react'
+import { usePlatform } from '../../context/usePlatform'
 
-const GOOGLE_MAPS_REVIEW_URL =
-  'https://www.google.com/maps/search/?api=1&query=SCG+Roofing+Manchester+NH'
+const DEFAULT_SCG_AUTHORITY = {
+  schemaType: 'RoofingContractor',
+  ratingValue: 5.0,
+  reviewCount: 2,
+  caption: 'Verified Google Rating · Manchester & Southern NH',
+  googleMapsUrl:
+    'https://www.google.com/maps/search/?api=1&query=SCG+Roofing+Manchester+NH',
+  pills: [
+    'Manchester, NH Verified',
+    'On-Schedule Execution',
+    'Full Strip & Reroof Specialists',
+  ],
+  featuredReview: {
+    initials: 'SM',
+    author: 'Sheila McDonough',
+    meta: 'Verified Google Review • Manchester, NH • 4 months ago',
+    datePublished: '2026-06-15',
+    segments: [
+      { text: 'SCG did a great job ' },
+      {
+        mark: 'stripping and reroofing our home in Manchester',
+        markClass: 'mark-1',
+      },
+      { text: '. Patrick was ' },
+      {
+        mark: 'professional and stuck to his schedule',
+        markClass: 'mark-2',
+      },
+      { text: '. His crew was ' },
+      {
+        mark: 'quick and efficient',
+        markClass: 'mark-3',
+      },
+      {
+        text: ". I would highly recommend them for anyone's roofing needs.",
+      },
+    ],
+    ownerReply: {
+      badge: 'SCG Roofing (Owner) • Direct Response',
+      text: 'Thank you for trusting SCG with your home. We’re glad you had a great experience!',
+    },
+  },
+  endorsementReview: {
+    initials: 'TS',
+    author: 'Thomas Scola',
+    meta: 'Verified Google Review • 4 months ago',
+    datePublished: '2026-06-15',
+    quote: 'Excellent work, totally recommended 👍👍',
+    footerPill: '100% 5.0-Star Customer Satisfaction Rating',
+  },
+  actionCard: {
+    kicker: 'DIRECT OWNER LED · MANCHESTER & HOOKSETT, NH',
+    headline: 'Want a Roof Done On-Time & On-Schedule?',
+    subtext:
+      'Deal directly with Patrick and a crew that respects your property and timeline.',
+    primaryCtaLabel: 'Get Your Free Roof Estimate',
+    secondaryLinkLabel: 'See Our 5.0 Rating on Google Maps',
+  },
+}
 
-const ROOFING_JSON_LD = {
-  '@context': 'https://schema.org',
-  '@type': ['LocalBusiness', 'RoofingContractor'],
-  name: 'SCG Roofing',
-  alternateName: 'Southern Cross Group Roofing',
-  url: 'https://www.scgroofs.com/',
-  telephone: '(603) 420-2824',
-  address: {
-    '@type': 'PostalAddress',
-    streetAddress: '146 Londonderry Turnpike, Unit 20',
-    addressLocality: 'Hooksett',
-    addressRegion: 'NH',
-    postalCode: '03106',
-    addressCountry: 'US',
-  },
-  areaServed: [
-    {
-      '@type': 'City',
-      name: 'Manchester',
-      containedInPlace: {
-        '@type': 'State',
-        name: 'New Hampshire',
-      },
-    },
-    {
-      '@type': 'AdministrativeArea',
-      name: 'Southern New Hampshire',
-    },
-  ],
-  aggregateRating: {
-    '@type': 'AggregateRating',
-    ratingValue: '5.0',
-    bestRating: '5',
-    worstRating: '1',
-    ratingCount: '2',
-    reviewCount: '2',
-  },
-  review: [
-    {
-      '@type': 'Review',
-      author: {
-        '@type': 'Person',
-        name: 'Sheila McDonough',
-      },
+function buildFallbackAuthority(tenant) {
+  if (!tenant || tenant.id === 'scg-roofing') {
+    return DEFAULT_SCG_AUTHORITY
+  }
+
+  const cityShort = (tenant.city || 'Local Area').split('&')[0].trim()
+  const primaryService =
+    tenant.pricingRules?.services?.[0]?.name || tenant.niche || 'Project'
+
+  return {
+    schemaType: tenant.niche?.toLowerCase().includes('hvac')
+      ? 'HVACBusiness'
+      : tenant.niche?.toLowerCase().includes('roof')
+        ? 'RoofingContractor'
+        : 'HomeAndConstructionBusiness',
+    ratingValue: 5.0,
+    reviewCount: 2,
+    caption: `Verified Google Rating · ${tenant.city}`,
+    googleMapsUrl:
+      tenant.googleReviewUrl ||
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${tenant.companyName} ${cityShort}`
+      )}`,
+    pills: [
+      `${cityShort} Verified`,
+      'On-Schedule Execution',
+      `${primaryService.split(' ').slice(0, 3).join(' ')} Specialists`,
+    ],
+    featuredReview: {
+      initials: 'SM',
+      author: 'Verified Homeowner',
+      meta: `Verified Google Review • ${cityShort} • Recent`,
       datePublished: '2026-06-15',
-      reviewBody:
-        "SCG did a great job stripping and reroofing our home in Manchester. Patrick was professional and stuck to his schedule. His crew was quick and efficient. I would highly recommend them for anyone's roofing needs.",
-      reviewRating: {
-        '@type': 'Rating',
-        ratingValue: '5',
-        bestRating: '5',
-        worstRating: '1',
+      segments: [
+        { text: `${tenant.companyName} did a phenomenal job on our ` },
+        {
+          mark: `${primaryService.toLowerCase()} in ${cityShort}`,
+          markClass: 'mark-1',
+        },
+        { text: '. The lead estimator was ' },
+        {
+          mark: 'transparent, punctual, and stuck to the schedule',
+          markClass: 'mark-2',
+        },
+        { text: '. Their field crew was ' },
+        {
+          mark: 'clean, fast, and respectful of our property',
+          markClass: 'mark-3',
+        },
+        { text: '. Highly recommend them to any homeowner.' },
+      ],
+      ownerReply: {
+        badge: `${tenant.companyName} (Owner) • Direct Response`,
+        text: `Thank you for trusting ${tenant.companyName} with your home. We’re glad you had a 5-star experience!`,
       },
     },
-    {
-      '@type': 'Review',
-      author: {
-        '@type': 'Person',
-        name: 'Thomas Scola',
-      },
+    endorsementReview: {
+      initials: 'TS',
+      author: 'Local Property Owner',
+      meta: 'Verified Google Review • Recent',
       datePublished: '2026-06-15',
-      reviewBody: 'Excellent work, totally recommended 👍👍',
-      reviewRating: {
-        '@type': 'Rating',
-        ratingValue: '5',
-        bestRating: '5',
-        worstRating: '1',
-      },
+      quote: 'Excellent work, totally recommended 👍👍',
+      footerPill: '100% 5.0-Star Customer Satisfaction Rating',
     },
-  ],
+    actionCard: {
+      kicker: `DIRECT OWNER LED · ${tenant.city.toUpperCase()}`,
+      headline: 'Want Your Project Done On-Time & On-Schedule?',
+      subtext: `Deal directly with ${tenant.companyName} and a crew that respects your property and timeline.`,
+      primaryCtaLabel: 'Get Your Free Estimate',
+      secondaryLinkLabel: 'See Our 5.0 Rating on Google Maps',
+    },
+  }
+}
+
+function buildJsonLd(tenant, authority) {
+  const plainFeaturedBody = (authority.featuredReview?.segments || [])
+    .map((s) => s.text || s.mark || '')
+    .join('')
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': ['LocalBusiness', authority.schemaType || 'RoofingContractor'],
+    name: tenant?.companyName || 'SCG Roofing',
+    telephone: tenant?.phoneDisplay || '(603) 420-2824',
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress:
+        tenant?.addressLine ||
+        '146 Londonderry Turnpike, Unit 20, Hooksett, NH 03106',
+    },
+    areaServed: tenant?.city || 'Manchester & Southern NH',
+    aggregateRating: {
+      '@type': 'AggregateRating',
+      ratingValue: Number(authority.ratingValue || 5.0).toFixed(1),
+      bestRating: '5',
+      worstRating: '1',
+      ratingCount: String(authority.reviewCount || 2),
+      reviewCount: String(authority.reviewCount || 2),
+    },
+    review: [
+      {
+        '@type': 'Review',
+        author: {
+          '@type': 'Person',
+          name: authority.featuredReview.author,
+        },
+        datePublished: authority.featuredReview.datePublished || '2026-06-15',
+        reviewBody: plainFeaturedBody,
+        reviewRating: {
+          '@type': 'Rating',
+          ratingValue: '5',
+          bestRating: '5',
+          worstRating: '1',
+        },
+      },
+      {
+        '@type': 'Review',
+        author: {
+          '@type': 'Person',
+          name: authority.endorsementReview.author,
+        },
+        datePublished:
+          authority.endorsementReview.datePublished || '2026-06-15',
+        reviewBody: authority.endorsementReview.quote,
+        reviewRating: {
+          '@type': 'Rating',
+          ratingValue: '5',
+          bestRating: '5',
+          worstRating: '1',
+        },
+      },
+    ],
+  }
 }
 
 function GoogleGIcon() {
@@ -117,11 +238,7 @@ function GoldStars({ staggered = false, idPrefix = 'star' }) {
           <svg
             key={idx}
             className="bento-star-svg"
-            style={
-              staggered
-                ? { '--star-delay': `${idx * 80}ms` }
-                : undefined
-            }
+            style={staggered ? { '--star-delay': `${idx * 80}ms` } : undefined}
             viewBox="0 0 20 20"
             width="18"
             height="18"
@@ -145,6 +262,11 @@ function GoldStars({ staggered = false, idPrefix = 'star' }) {
 }
 
 export default function VerifiedAuthorityBento({ onOpenQuote }) {
+  const { activeTenant } = usePlatform()
+  const authority =
+    activeTenant?.verifiedAuthority || buildFallbackAuthority(activeTenant)
+  const targetRating = Number(authority.ratingValue || 5.0)
+
   const sectionRef = useRef(null)
   const [isVisible, setIsVisible] = useState(false)
   const [ratingDisplay, setRatingDisplay] = useState('0.0')
@@ -155,7 +277,7 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
 
     if (typeof IntersectionObserver === 'undefined') {
       setIsVisible(true)
-      setRatingDisplay('5.0')
+      setRatingDisplay(targetRating.toFixed(1))
       return
     }
 
@@ -176,7 +298,7 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [targetRating])
 
   useEffect(() => {
     if (!isVisible) return
@@ -186,12 +308,11 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
     if (prefersReducedMotion) {
-      setRatingDisplay('5.0')
+      setRatingDisplay(targetRating.toFixed(1))
       return
     }
 
     const duration = 1200
-    const target = 5.0
     let startTime = null
     let rafId = null
 
@@ -199,15 +320,14 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
       if (!startTime) startTime = timestamp
       const elapsed = timestamp - startTime
       const progress = Math.min(1, elapsed / duration)
-      // Cubic ease-out for crisp deceleration onto 5.0
       const eased = 1 - Math.pow(1 - progress, 3)
-      const currentVal = (target * eased).toFixed(1)
+      const currentVal = (targetRating * eased).toFixed(1)
       setRatingDisplay(currentVal)
 
       if (progress < 1) {
         rafId = window.requestAnimationFrame(step)
       } else {
-        setRatingDisplay('5.0')
+        setRatingDisplay(targetRating.toFixed(1))
       }
     }
 
@@ -215,7 +335,7 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
     return () => {
       if (rafId) window.cancelAnimationFrame(rafId)
     }
-  }, [isVisible])
+  }, [isVisible, targetRating])
 
   const handleCardMouseMove = (e) => {
     const card = e.currentTarget
@@ -238,6 +358,8 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
     }
   }
 
+  const jsonLdObject = buildJsonLd(activeTenant, authority)
+
   return (
     <section
       ref={sectionRef}
@@ -245,10 +367,10 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
       aria-labelledby="verified-authority-heading"
       className={`verified-authority-bento ${isVisible ? 'is-in-view' : ''}`}
     >
-      {/* Embedded LocalBusiness / RoofingContractor JSON-LD Schema for NH SEO */}
+      {/* Embedded LocalBusiness + Vertical-Specific JSON-LD Schema */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(ROOFING_JSON_LD) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdObject) }}
       />
 
       {/* Ambient Radial Lighting Backdrop for True Glassmorphism Depth */}
@@ -260,7 +382,7 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
 
       <div className="wrap bento-container">
         <h2 id="verified-authority-heading" className="visually-hidden">
-          5.0-Star Verified Google Reviews for SCG Roofing in Manchester, NH
+          5.0-Star Verified Google Reviews for {activeTenant?.companyName || 'SCG Roofing'}
         </h2>
 
         {/* 1. TOP ANIMATED TRUST STRIP (Bridge Under the Hero) */}
@@ -275,7 +397,7 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
               </span>
               <span
                 className="trust-rating-counter"
-                aria-label="5.0 out of 5 rating"
+                aria-label={`${targetRating.toFixed(1)} out of 5 rating`}
               >
                 {ratingDisplay}
               </span>
@@ -283,9 +405,7 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
 
             <div className="trust-stars-sheen-wrap">
               <GoldStars staggered={true} idPrefix="strip" />
-              <span className="trust-verified-caption">
-                Verified Google Rating · Manchester &amp; Southern NH
-              </span>
+              <span className="trust-verified-caption">{authority.caption}</span>
             </div>
           </div>
 
@@ -293,30 +413,20 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
             className="trust-strip-pills"
             aria-label="Verified customer feedback highlights"
           >
-            <span className="trust-verified-pill">
-              <span className="pill-check" aria-hidden="true">
-                ✓
+            {(authority.pills || []).map((pill, idx) => (
+              <span key={idx} className="trust-verified-pill">
+                <span className="pill-check" aria-hidden="true">
+                  ✓
+                </span>
+                {pill}
               </span>
-              Manchester, NH Verified
-            </span>
-            <span className="trust-verified-pill">
-              <span className="pill-check" aria-hidden="true">
-                ✓
-              </span>
-              On-Schedule Execution
-            </span>
-            <span className="trust-verified-pill">
-              <span className="pill-check" aria-hidden="true">
-                ✓
-              </span>
-              Full Strip &amp; Reroof Specialists
-            </span>
+            ))}
           </div>
         </div>
 
         {/* 2. ASYMMETRIC 3-CARD BENTO GRID LAYOUT */}
         <div className="authority-bento-grid">
-          {/* Card A (Left Column, Spans 2 Rows): Featured Manchester Spotlight + Owner Reply */}
+          {/* Card A (Left Column, Spans 2 Rows): Featured Spotlight + Owner Reply */}
           <article
             className="bento-glass-surface bento-card bento-card-featured"
             style={{ '--card-delay': '80ms' }}
@@ -324,59 +434,61 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
           >
             <header className="bento-card-header">
               <div className="reviewer-avatar avatar-sm" aria-hidden="true">
-                <span>SM</span>
+                <span>{authority.featuredReview.initials}</span>
               </div>
               <div className="reviewer-meta-group">
                 <div className="reviewer-name-row">
-                  <strong className="reviewer-name">Sheila McDonough</strong>
+                  <strong className="reviewer-name">
+                    {authority.featuredReview.author}
+                  </strong>
                   <span className="google-mini-tag">
                     <GoogleGIcon />
                     <span>Verified</span>
                   </span>
                 </div>
                 <span className="reviewer-meta">
-                  Verified Google Review • Manchester, NH • 4 months ago
+                  {authority.featuredReview.meta}
                 </span>
               </div>
               <div className="header-stars-right">
-                <GoldStars idPrefix="sheila" />
+                <GoldStars idPrefix="featured" />
               </div>
             </header>
 
             <blockquote className="featured-review-body">
               <p>
-                “SCG did a great job{' '}
-                <mark className="bento-highlight mark-1">
-                  stripping and reroofing our home in Manchester
-                </mark>
-                . Patrick was{' '}
-                <mark className="bento-highlight mark-2">
-                  professional and stuck to his schedule
-                </mark>
-                . His crew was{' '}
-                <mark className="bento-highlight mark-3">
-                  quick and efficient
-                </mark>
-                . I would highly recommend them for anyone&apos;s roofing needs.”
+                “
+                {(authority.featuredReview.segments || []).map((seg, idx) =>
+                  seg.mark ? (
+                    <mark
+                      key={idx}
+                      className={`bento-highlight ${seg.markClass || `mark-${(idx % 3) + 1}`}`}
+                    >
+                      {seg.mark}
+                    </mark>
+                  ) : (
+                    <span key={idx}>{seg.text}</span>
+                  )
+                )}
+                ”
               </p>
             </blockquote>
 
             {/* Nested Owner Response Sub-Card */}
-            <aside
-              className="owner-response-subcard"
-              aria-label="Owner response from SCG Roofing"
-            >
-              <div className="owner-response-badge">
-                <span className="owner-dot" aria-hidden="true" />
-                <strong>SCG Roofing (Owner) • Direct Response</strong>
-              </div>
-              <p className="owner-response-text">
-                <em>
-                  “Thank you for trusting SCG with your home. We’re glad you had
-                  a great experience!”
-                </em>
-              </p>
-            </aside>
+            {authority.featuredReview.ownerReply && (
+              <aside
+                className="owner-response-subcard"
+                aria-label={`Owner response from ${activeTenant?.companyName || 'SCG Roofing'}`}
+              >
+                <div className="owner-response-badge">
+                  <span className="owner-dot" aria-hidden="true" />
+                  <strong>{authority.featuredReview.ownerReply.badge}</strong>
+                </div>
+                <p className="owner-response-text">
+                  <em>“{authority.featuredReview.ownerReply.text}”</em>
+                </p>
+              </aside>
+            )}
           </article>
 
           {/* Card B (Top Right Column): High-Impact Endorsement Card */}
@@ -387,23 +499,25 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
           >
             <header className="bento-card-header">
               <div className="reviewer-avatar avatar-ts" aria-hidden="true">
-                <span>TS</span>
+                <span>{authority.endorsementReview.initials}</span>
               </div>
               <div className="reviewer-meta-group">
                 <div className="reviewer-name-row">
-                  <strong className="reviewer-name">Thomas Scola</strong>
+                  <strong className="reviewer-name">
+                    {authority.endorsementReview.author}
+                  </strong>
                 </div>
                 <span className="reviewer-meta">
-                  Verified Google Review • 4 months ago
+                  {authority.endorsementReview.meta}
                 </span>
               </div>
               <div className="header-stars-right">
-                <GoldStars idPrefix="thomas" />
+                <GoldStars idPrefix="endorsement" />
               </div>
             </header>
 
             <blockquote className="endorsement-display-quote">
-              <p>“Excellent work, totally recommended 👍👍”</p>
+              <p>“{authority.endorsementReview.quote}”</p>
             </blockquote>
 
             <footer className="endorsement-footer">
@@ -411,12 +525,12 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
                 <span className="gold-spark" aria-hidden="true">
                   ★
                 </span>
-                100% 5.0-Star Customer Satisfaction Rating
+                {authority.endorsementReview.footerPill}
               </span>
             </footer>
           </article>
 
-          {/* Card C (Bottom Right Column): The "Work With Patrick" Action & Live Verification Card */}
+          {/* Card C (Bottom Right Column): Direct Action & Live Verification Card */}
           <article
             className="bento-glass-surface bento-card bento-card-action"
             style={{ '--card-delay': '320ms' }}
@@ -424,15 +538,12 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
           >
             <div className="action-card-content">
               <span className="action-kicker">
-                DIRECT OWNER LED · MANCHESTER &amp; HOOKSETT, NH
+                {authority.actionCard.kicker}
               </span>
               <h3 className="action-headline">
-                Want a Roof Done On-Time &amp; On-Schedule?
+                {authority.actionCard.headline}
               </h3>
-              <p className="action-subtext">
-                Deal directly with Patrick and a crew that respects your
-                property and timeline.
-              </p>
+              <p className="action-subtext">{authority.actionCard.subtext}</p>
             </div>
 
             <div className="action-card-ctas">
@@ -441,20 +552,20 @@ export default function VerifiedAuthorityBento({ onOpenQuote }) {
                 className="bento-primary-cta"
                 onClick={handleEstimateClick}
               >
-                <span>Get Your Free Roof Estimate</span>
+                <span>{authority.actionCard.primaryCtaLabel}</span>
                 <span className="cta-arrow" aria-hidden="true">
                   →
                 </span>
               </a>
 
               <a
-                href={GOOGLE_MAPS_REVIEW_URL}
+                href={authority.googleMapsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bento-secondary-trust-link"
               >
                 <GoogleGIcon />
-                <span>See Our 5.0 Rating on Google Maps</span>
+                <span>{authority.actionCard.secondaryLinkLabel}</span>
                 <span className="external-arrow" aria-hidden="true">
                   ↗
                 </span>
